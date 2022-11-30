@@ -1,0 +1,271 @@
+from binance.client import Client
+from time import sleep
+from telegram import Bot
+import pandas as pd
+from random import*
+from datetime import date, timedelta
+from ccxt import binance
+import numpy as np
+import pandas_ta as ta
+
+my_api=''
+my_secret= ''# 바이낸스 비밀키
+binance1 = binance(config={
+    'apiKey': my_api,     
+    'secret': my_secret,      
+    'enableRateLimit': True, 
+    'options': {'defaultType': 'future'}})
+token = '5509132413:AAHsJB-zhsOmx-wKrDpNEl_SLinFZ1uhXDg'
+mc = '5309143685'
+bot = Bot(token)
+
+rest_time=1
+
+def markets(symbol0): 
+    sleep(rest_time)
+    return binance1.load_markets(symbol0)
+
+def market(symbol0):
+    sleep(rest_time)
+    return binance1.market(symbol0)
+
+def My_wallet():
+    balance_wallet = binance1.fetch_balance()
+    return float(balance_wallet['total']['USDT'])
+
+
+# 사용 잔고 불러오기
+def My_wallet_used():
+    balance_wallet = binance1.fetch_balance()
+    return float(balance_wallet['used']['USDT'])
+def market(symbol0):
+    return binance1.market(symbol0)
+
+def Coin_info(symbol0,candle_time):
+    global Coin,today
+    sleep(rest_time)
+    today = date.today()
+    yesterday = date.today() - timedelta(1)
+    api_key = my_api
+    api_secret = my_secret
+    client = Client(api_key=api_key, api_secret=api_secret)
+    Coin = client.futures_historical_klines(
+        symbol= '{}'.format(symbol0.replace('/','')),
+        interval= candle_time,
+        start_str="{}".format(yesterday.strftime('%Y-%m-%d')),
+        limit=1000
+    )
+    return Coin
+
+# 종가 불러오기
+def Close_coin(symbol0,candle_time):
+    sleep(rest_time)
+    Close_coin1 = Coin_info(symbol0,candle_time)
+    u=0
+    for i in Close_coin1:
+        u=u+1
+    return float(Close_coin1[u-2][4])
+
+def Open_coin(symbol0,candle_time):
+    sleep(rest_time)
+    Open_coin1 = Coin_info(symbol0,candle_time)
+    u=0
+    for i in Open_coin1:
+        u=u+1
+    return float(Open_coin1[u-2][1])
+
+# 현재가
+def Coin_last(symbol0):
+    sleep(rest_time)
+    api_key = my_api
+    api_secret = my_secret
+    client = Client(api_key=api_key, api_secret=api_secret)
+    coin_last = client.get_symbol_ticker(symbol='{}'.format(symbol0.replace('/','')))
+    coin_last_price = coin_last['price']
+    return float(coin_last_price)
+
+# 내용 수신
+def Dialouge(speech):
+    while True:
+        try:
+            print('')
+            bot.sendMessage(mc, '_')
+            print('{}'.format(speech))
+            bot.sendMessage(mc, '{}'.format(speech))
+        except:
+            sleep(2)
+            continue
+        break
+
+
+def get_data_frame(symbol0,candle_time):
+    global df
+    bars = Coin_info(symbol0,candle_time)
+    df = pd.DataFrame(bars, columns=['Open time','Open','High','Low',
+                                        'Close','Volume','Close time',
+                                        'Quote asset volume','Number of trades',
+                                        'Taker buy base asset volume',
+                                        'Taker buy quote asset volume','Ignore.']) 
+    return df
+
+def Stoch_k(symbol0,candle_time,length,smooth):
+    i=0
+    get_data_frame(symbol0,candle_time)
+    ndays_high = df.High.rolling(window=length,min_periods=1).max()
+    for k in ndays_high:
+        i=i+1
+    ndays_low = df.Low.rolling(window=length,min_periods=1).min()
+    st= np.array( df.Close , dtype=np.float64)
+    fast_k = ((st - ndays_low)/ (ndays_high- ndays_low))*100
+    slow_k = fast_k.rolling(smooth).mean()
+    j=float(slow_k[i-1])
+    return j
+
+def Stoch_delay_k(symbol0,candle_time,length,smooth):
+    i=0
+    get_data_frame(symbol0,candle_time)
+    ndays_high = df.High.rolling(window=length,min_periods=1).max()
+    for k in ndays_high:
+        i=i+1
+    ndays_low = df.Low.rolling(window=length,min_periods=1).min()
+    st= np.array( df.Close , dtype=np.float64)
+    fast_k = ((st - ndays_low)/ (ndays_high- ndays_low))*100
+    slow_k = fast_k.rolling(smooth).mean()
+    j=float(slow_k[i-2])
+    return j
+
+def Stoch_d(symbol0,candle_time,length,smooth,d):
+    i=0
+    get_data_frame(symbol0,candle_time)
+    ndays_high = df.High.rolling(window=length,min_periods=1).max()
+    for k in ndays_high:
+        i=i+1
+    ndays_low = df.Low.rolling(window=length,min_periods=1).min()
+    st= np.array( df.Close , dtype=np.float64)
+    fast_k = ((st - ndays_low)/ (ndays_high- ndays_low))*100
+    slow_k = fast_k.rolling(smooth).mean()
+    slow_d = slow_k.rolling(d).mean()
+    ju=float(slow_d[i-1])
+    return ju
+
+def Stoch_delay_d(symbol0,candle_time,length,smooth,d):
+    i=0
+    get_data_frame(symbol0,candle_time)
+    ndays_high = df.High.rolling(window=length,min_periods=1).max()
+    for k in ndays_high:
+        i=i+1
+    ndays_low = df.Low.rolling(window=length,min_periods=1).min()
+    st= np.array( df.Close , dtype=np.float64)
+    fast_k = ((st - ndays_low)/ (ndays_high- ndays_low))*100
+    slow_k = fast_k.rolling(smooth).mean()
+    slow_d = slow_k.rolling(d).mean()
+    jd=float(slow_d[i-2])
+    return jd
+
+# 볼린저 밴드 계산
+def bollinger_trade_logic(symbol0,candle_time):
+    global ma,upper,lower,jj
+    symbol_df = get_data_frame(symbol0,candle_time)
+    period = 20
+    ma = symbol_df['sma'] = symbol_df['Close'].rolling(period).mean()
+    symbol_df['std'] = symbol_df['Close'].rolling(period).std()
+    upper = symbol_df['upper'] = symbol_df['sma']  + (2 * symbol_df['std'])
+    lower= symbol_df['lower'] = symbol_df['sma']  - (2 * symbol_df['std'])
+    jj=0
+    for i in upper:
+        jj=jj+1
+
+
+# 볼린저 밴드 중앙선 값 
+def Bb_ma(symbol0,candle_time):
+    bollinger_trade_logic(symbol0,candle_time)
+    bb_ma=ma[jj-1]
+    return bb_ma
+
+# 볼린저 밴드 상단선 값 
+def Bb_upper(symbol0,candle_time):
+    bollinger_trade_logic(symbol0,candle_time)
+    bb_upper=upper[jj-1]
+    return bb_upper
+
+# 볼린저 밴드 하단선 값 
+def Bb_lower(symbol0,candle_time):
+    bollinger_trade_logic(symbol0,candle_time)
+    bb_lower=lower[jj-1]
+    return bb_lower
+
+def ma(symbol0,candle_time,length2):
+    get_data_frame(symbol0,candle_time)
+    z=df['Close'].ewm(span=length2, adjust=False,min_periods=5).mean()
+    i=0
+    for k in z:
+        i=i+1
+    return z[i-1]
+
+def MACD(symbol0,candle_time,macd_short, macd_long, macd_signal):
+    global name,name1
+    get_data_frame(symbol0,candle_time)
+
+    df["MACD_short"]=df["Close"].ewm(span=macd_short).mean()
+
+    df["MACD_long"]=df["Close"].ewm(span=macd_long).mean()
+
+    df["MACD"]=df.apply(lambda x: (x["MACD_short"]-x["MACD_long"]), axis=1)
+    ii=0
+    for o in df["MACD"]:
+        ii+=1
+    name=df["MACD"][ii-1]
+    df["MACD_signal"]=df["MACD"].ewm(span=macd_signal).mean()  
+    name1=df["MACD_signal"][ii-1]
+
+def Long(k,leverage1):
+    global amount0,long
+    long=1
+    binance1.fapiPrivate_post_leverage({'symbol': market(k)['id'], 'leverage': leverage1})
+    order = binance1.create_market_buy_order(symbol=k,amount='{}'.format(amount0),params = {'positionSide': 'LONG'}) 
+    long=0
+
+def Long_sell(k,leverage1):
+    global amount0,amount1
+    binance1.fapiPrivate_post_leverage({'symbol': market(k)['id'], 'leverage': leverage1})
+    order = binance1.create_market_sell_order(symbol=k,amount='{}'.format(amount0),params = {'positionSide': 'LONG'}) 
+
+def Short(k,leverage1):
+    global amount0,short
+    short=1
+    binance1.fapiPrivate_post_leverage({'symbol': market(k)['id'], 'leverage': leverage1})
+    order = binance1.create_market_sell_order(symbol=k,amount='{}'.format(amount0),params = {'positionSide': 'SHORT'}) 
+    short=0
+    
+def Short_sell(k,leverage1):
+    global amount0
+    binance1.fapiPrivate_post_leverage({'symbol': market(k)['id'], 'leverage': leverage1})
+    order = binance1.create_market_buy_order(symbol=k,amount='{}'.format(amount0),params = {'positionSide': 'SHORT'}) 
+
+def Caculator(symbol0,candle_time):
+    global fin_list,bound_short,bound_long
+    fin_list=[]
+    Close_coin1 = Coin_info(symbol0,candle_time)
+    Open_coin1 = Coin_info(symbol0,candle_time)
+    u=0
+    for i in Close_coin1:
+        u=u+1
+    num=u
+    for i in range(2,38):
+        fin_list.append(float(Close_coin1[num-i][4]))
+    num=u
+    for i in range(2,38):
+        fin_list.append(float(Open_coin1[num-i][1]))
+    bound_short = max(fin_list)
+    bound_long = min(fin_list)
+
+
+def super_trend(symbol0,candle_time,period1, multiplier1):
+    global jj, jj1
+    get_data_frame(symbol0,candle_time)
+    df['sup']= ta.supertrend(high=df['High'].astype(float),low=df['Low'].astype(float),close=df['Close'].astype(float),period=period1,multiplier=multiplier1)['SUPERT_7_{:.1f}'.format(multiplier1)]
+    jj1=df['sup']
+    i=0
+    for k in jj1:
+        i+=1
+    return jj1[i-2]
